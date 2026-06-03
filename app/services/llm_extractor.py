@@ -54,7 +54,8 @@ class LLMExtractor:
             raise ValueError("Missing GEMINI_API_KEY")
         
         self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"  # 或 gemini-2.5-flash-lite
+        self.model_name = "gemini-3.1-flash-lite"
+
         
     def batch_filter_articles(self, articles: List[Dict[str, str]]) -> List[Dict[str, Any]]:
         """

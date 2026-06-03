@@ -21,7 +21,7 @@ pinned: false
 
 2. **複合式 NLP 萃取 (Hybrid LLM-Regex Extraction)**
    - **Why not 100% LLM?** 如果把長篇技術文章（尤其是包含程式碼的內容）直接丟給 LLM 進行分塊，極易誘發「截斷程式碼」或產生「幻覺 (Hallucinations)」。
-   - **解法**：我設計了 **Adaptive Chunking** 機制，第一層以 Python 正規表達式精準保護 Markdown ```` 程式碼區塊作為「不可分割原子」，第二層才採用 `Gemini 2.5 Flash Structured Outputs` 將文段結構化為純 JSON 圖譜節點。確保系統取出的每一行程式碼都是 100% 可編譯執行的。
+   - **解法**：我設計了 **Adaptive Chunking** 機制，第一層以 Python 正規表達式精準保護 Markdown ```` 程式碼區塊作為「不可分割原子」，第二層才採用 `Gemini 3.1 Flash-Lite Structured Outputs` 將文段結構化為純 JSON 圖譜節點。確保系統取出的每一行程式碼都是 100% 可編譯執行的。
 
 3. **極限速率防禦 (Strict Rate-Limiting Pipeline)**
    - API 每分鐘限制 15 次 (RPM=15) 非常容易因非同步爬蟲而觸發 `HTTP 429` 被永久封鎖。
@@ -51,7 +51,7 @@ graph TD
 ### 🛠️ Tech Stack (技術棧)
 - **Backend**: Python 3.10+, `FastAPI`, `asyncio`, `httpx`
 - **Data Extractor**: `BeautifulSoup4`, `Regex`
-- **Generative AI**: Google GenAI SDK (`Gemini 2.5 Flash / Flash-Lite`)
+- **Generative AI**: Google GenAI SDK (`Gemini 3.1 Flash-Lite`)
 - **Database**: Supabase (`supabase-py`), PostgreSQL (Nodes/Edges Model)
 - **Notification**: Telegram Bot API
 - **Spaced Repetition**: FSRS (Free Spaced Repetition Scheduler) Algorithm
@@ -77,9 +77,10 @@ TELEGRAM_CHAT_ID=your_telegram_chat_id
 
 **3. 觸發核心模組**
 ```bash
-# 啟動非同步流水線 (資料爬取 -> 切塊 -> 圖譜抽取 -> 寫入資料庫)
-python -m app.tasks.pipeline
+# 透過 FastAPI 啟動 API 伺服器
+uvicorn app.main:app --host 0.0.0.0 --port 7860 --reload
 
-# 啟動 FSRS 排程推播 (透過 Telegram 發送今日應複習卡片與程式碼)
+# 或直接執行對應排程腳本進行測試
+python -m app.tasks.pipeline
 python -m app.tasks.daily_review
 ```
