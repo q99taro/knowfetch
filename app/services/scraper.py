@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import re
 
 from urllib.parse import urlparse, parse_qs
+import urllib.request
 from youtube_transcript_api import YouTubeTranscriptApi
 
 class ArticleScraper:
@@ -34,10 +35,18 @@ class ArticleScraper:
             for source_name, url in self.FEEDS.items():
                 print(f"正在擷取 RSS: {source_name}")
                 try:
-                    response = await client.get(url)
-                    response.raise_for_status()
-                    
-                    root = ET.fromstring(response.text)
+                    if 'youtube.com' in url:
+                        # 使用 urllib 作為 YouTube RSS 的退避方案，因為 httpx 容易遇到 TLS 握手被阻擋的問題
+                        def fetch_yt():
+                            req = urllib.request.Request(url, headers=headers)
+                            with urllib.request.urlopen(req, timeout=30) as resp:
+                                return resp.read().decode('utf-8')
+                        text_data = await asyncio.to_thread(fetch_yt)
+                        root = ET.fromstring(text_data)
+                    else:
+                        response = await client.get(url)
+                        response.raise_for_status()
+                        root = ET.fromstring(response.text)
                     
                     # 判斷是否為 Atom feed (例如 YouTube)
                     if root.tag.endswith('feed'):
