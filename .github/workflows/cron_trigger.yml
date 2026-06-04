@@ -1,0 +1,33 @@
+name: KnowFetch Daily Schedule
+
+on:
+  schedule:
+    # GitHub Actions 的 cron 使用 UTC 時間。台灣時間 (UTC+8) 早上 7 點 = UTC 時間前一天的 23 點
+    - cron: '0 23 * * *'
+    # 台灣時間 (UTC+8) 早上 8 點 = UTC 時間的 0 點
+    - cron: '0 0 * * *'
+  # workflow_dispatch 允許我們在 GitHub 網頁上「手動按鈕」強制觸發測試
+  workflow_dispatch: 
+
+jobs:
+  trigger_pipeline:
+    name: Trigger Pipeline (07:00 AM UTC+8)
+    # 確保這個 Job 只在早上 7 點（或手動觸發時）執行
+    if: github.event.schedule == '0 23 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send POST request to HF Space
+        run: |
+          echo "Triggering Pipeline..."
+          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" -H "Content-Type: application/json"
+
+  trigger_review:
+    name: Trigger Review (08:00 AM UTC+8)
+    # 確保這個 Job 只在早上 8 點（或手動觸發時）執行
+    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send POST request to HF Space
+        run: |
+          echo "Triggering Review..."
+          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" -H "Content-Type: application/json"
