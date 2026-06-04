@@ -14,8 +14,8 @@ class ArticleScraper:
     FEEDS = {
         "kdnuggets": "https://www.kdnuggets.com/feed",
         "towardsdatascience": "https://towardsdatascience.com/feed/",
-        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ",
-        "youtube_vivian": "https://www.youtube.com/feeds/videos.xml?channel_id=UCyB2RBqKbxDPGCs1PokeUiA"
+        "youtube_hungyi": "https://www.youtube.com/@HungyiLeeNTU/videos",
+        "youtube_vivian": "https://www.youtube.com/@VivianMiuLab/videos"
     }
 
     async def fetch_latest_articles(self) -> List[Dict[str, str]]:
@@ -31,13 +31,7 @@ class ArticleScraper:
                 print(f"正在擷取 RSS: {source_name}")
                 try:
                     if 'youtube.com' in url:
-                        match = re.search(r'channel_id=([a-zA-Z0-9_-]+)', url)
-                        if not match:
-                            continue
-                        channel_id = match.group(1)
-                        
-                        chan_url = f"https://www.youtube.com/channel/{channel_id}/videos"
-                        chan_resp = await client.get(chan_url)
+                        chan_resp = await client.get(url)
                         chan_resp.raise_for_status()
                         
                         yt_data_match = re.search(r'var ytInitialData = (\{.*?\});</script>', chan_resp.text)
