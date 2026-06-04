@@ -47,6 +47,7 @@ class ReviewScheduler:
             
             # 3. 透過 Telegram 發送
             success = await self.notifier.send_review_message(
+                node_id=str(node_id),
                 node_title=node['title'],
                 node_label=node['label'],
                 node_content=node['content'],
@@ -54,11 +55,10 @@ class ReviewScheduler:
             )
             
             if success:
-                print("-> 🎉 成功推送複習訊息到 Telegram！")
+                print("-> 🎉 成功推送複習訊息到 Telegram！請在 Telegram 上點擊按鈕完成複習。")
                 
-                # 4. 更新節點的 due_date (這裡只是個假測試，實際要換成您的 FSRS 計算結果)
-                # 假設預設推遲一天
-                # self.db.table("nodes").update({"due_date": next_date}).eq("id", node_id).execute()
+                # 備註：現在 due_date 與狀態更新將由 Webhook 負責處理，
+                # 所以推播時不再直接更新資料庫。
                 
         except Exception as e:
             print(f"複習推送發生錯誤: {e}")

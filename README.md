@@ -21,7 +21,7 @@ KnowFetch 是一個幫你**「全自動消化技術長文」**的超級助理。
 2. **AI 精準篩選**：收集到文章後，AI (Gemini) 會根據你的喜好（例如：只要 AI、Data Science 和 Python 教學，不要電腦視覺相關文章），自動把不相干的文章過濾掉。
 3. **長文拆解與代碼保護**：針對入選的好文章，系統會下載全文，並把它切成幾段「容易消化的碎片」。過程中，含有程式碼的部分會被 Python 特殊保護，確保切出來的範例程式碼完整無缺、可以直接執行。
 4. **大局觀萃取與自動翻譯**：為了避免 LLM 在處理長文時「見樹不見林」，系統會以單次最高 **60,000 字元** 的超大區塊，將整篇長文一次性餵給 AI 進行全局掃視。AI 扮演資深實戰專家，摒棄無實質技術細節的科普與初階語法（如 `csv`, `for-loop`），精準搜尋並提煉出文章中的「**最佳實踐 (Best Practices)**」、「效能優化寫法」以及對應的進階套件用法，並**保留完整的上下文脈絡翻譯為繁體中文**。**特別說明：原本的程式碼範例會被原樣保留，不進行翻譯，確保學習時的準確性。**
-5. **到期推播複習**：每天晚上，系統的「間隔重複演算法 (FSRS)」會幫你計算出今天大腦該複習哪個知識點了。時間一到，你的 **Telegram** 就會收到一張精美的**中文深階知識卡片**，上面有概念說明以及搭配的 Python 程式碼上下文，讓你用一分鐘就能在通勤時輕鬆鞏固記憶！
+5. **到期推播複習與互動式 FSRS 反饋**：每天晚上，系統內建的「間隔重複演算法 (FSRS-Lite)」會根據您的記憶衰退曲線，計算出今天大腦該複習哪個知識點。時間一到，你的 **Telegram** 會收到一張精美的**中文深階知識卡片**，上面不僅有概念說明與 Python 程式碼，卡片底部還附有「忘記 / 困難 / 普通 / 簡單」四個互動按鈕（Inline Keyboard）。點擊後系統會透過 FastAPI Webhook 即時更新您的個人大腦記憶參數，精準排程下一次的複習時間！
 
 ### ✨ 系統設計與架構決策 (Engineering Trade-offs & Architecture)
 
@@ -58,7 +58,9 @@ graph TD
     subgraph Spaced_Repetition [Spaced Repetition FSRS]
         G -->|Daily Check due_date| H(FSRS Engine)
         H -->|Context: Fetch Linked Code| I[Telegram API]
-        I -->|Push Alert| J((User))
+        I -->|Push Alert with Buttons| J((User))
+        J -->|Click: 忘記/困難/普通/簡單| K[FastAPI Webhook]
+        K -->|Update Memory Parameters| G
     end
 ```
 
@@ -100,7 +102,12 @@ python -m app.tasks.pipeline
 python -m app.tasks.daily_review
 ```
 
-**4. 雲端部署與自動化排程 (Zero-Cost Deployment)**
+**4. 註冊 Telegram Webhook (重要！即時回饋必備)**
+為啟用卡片底下的互動按鈕，需註冊網址讓 Telegram 能將按鈕回饋送回你的伺服器。請打開瀏覽器並訪問以下網址：
+`https://api.telegram.org/bot<你的TELEGRAM_BOT_TOKEN>/setWebhook?url=<你的FASTAPI伺服器HTTPS網址>/webhook/telegram`
+若顯示 `"Webhook was set"`，即代表雙向綁定成功。
+
+**5. 雲端部署與自動化排程 (Zero-Cost Deployment)**
 本專案原生支援 **Hugging Face Spaces (Docker 部署)**。
 為解決免費空間的休眠機制，專案內建 `.github/workflows/cron_trigger.yml`，透過 **GitHub Actions** 每天定時發送帶有 `X-Cron-Secret` 標頭的 HTTP 請求。這樣不僅能自動觸發爬蟲與推播流水線，還能順便喚醒休眠中的 HF Space 伺服器，達成真正的無伺服器全自動化體驗。
 > ⚠️ **安全性提醒**：部署至雲端時，請務必將上方所有環境變數設定在伺服器後台的 **Secrets** 中（而非公開的 Variables），以防止金鑰外洩。
