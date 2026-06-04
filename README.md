@@ -9,13 +9,13 @@ pinned: false
 
 ## 🚀 KnowFetch
 
-**KnowFetch** 是一個「零維運成本」的個人化技術知識圖譜系統。它能全自動抓取技術長文與 YouTube 影片，利用 LLM 萃取精華並生成具備完整程式碼的知識卡片，最後透過 Telegram 與 FSRS (間隔重複) 演算法推播給你複習。在極度受限的免費雲端資源下，實作了穩定且高可用的資料管線。
+**KnowFetch** 是一個「零維運成本」的個人化技術知識圖譜系統。它能全自動抓取技術長文並透過 YouTube API 同步優質頻道影片，利用 LLM 萃取精華並生成具備完整程式碼的知識卡片，最後透過 Telegram 與 FSRS (間隔重複) 演算法推播給你複習。在極度受限的免費雲端資源下，實作了穩定且高可用的資料管線。
 
 ---
 
 ### 📊 系統每天的實際運作流程 (Daily Workflow)
 
-1. **自動巡邏與抓取**：每日定時巡邏知名技術網站 (如 **KDnuggets**、**Towards Data Science**) 與優質 YouTube 技術頻道 (如 [**Hung-yi Lee**](https://www.youtube.com/@HungyiLeeNTU)、[**陳縕儂Vivian NTU MiuLab**](https://www.youtube.com/c/VivianNTUMiuLab))，收集最新文章清單與影片字幕。
+1. **RSS 自動巡邏與 YouTube API 整合**：每日定時巡邏知名技術網站 (如 **KDnuggets**、**Towards Data Science**) 的 RSS，並透過 YouTube Data API v3 精準抓取優質 YouTube 技術頻道 (如 [**Hung-yi Lee**](https://www.youtube.com/@HungyiLeeNTU)、[**陳縕儂Vivian NTU MiuLab**](https://www.youtube.com/c/VivianNTUMiuLab)) 的最新影片清單與字幕。
 2. **AI 精準篩選**：利用 LLM 依據個人喜好 (如: 只保留 AI/Python 相關文章) 即時過濾掉不感興趣的雜訊。
 3. **長文拆解與代碼保護**：針對優質長文，系統會自動下載全文，並使用 Python 特殊正則處理，確保切塊時「範例程式碼」的完整無缺，避免程式碼被從中截斷。
 4. **大局觀萃取與翻譯**：將極大片段 (最高 60,000 字元) 餵給 AI 進行全局掃視，摒棄初階語法，精準提煉「最佳實踐 (Best Practices)」，並將上下文翻譯成繁體中文（原本的程式碼原樣保留）。
@@ -43,7 +43,7 @@ pinned: false
 
 ```mermaid
 graph TD
-    A[Data Ingestion: RSS/YouTube] --> B(Supabase Deduplication)
+    A[Data Ingestion: RSS/YouTube API] --> B(Supabase Deduplication)
     B --> C{Async Batch Filter}
     C --> D[Adaptive Chunker & Regex]
     D --> E{Gemini Structured Output}

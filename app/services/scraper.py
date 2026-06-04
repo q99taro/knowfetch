@@ -1,4 +1,5 @@
 import asyncio
+import os
 import httpx
 import json
 from bs4 import BeautifulSoup
@@ -33,37 +34,71 @@ class ArticleScraper:
         }
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
             for source_name, url in self.FEEDS.items():
-                print(f"正在擷取 RSS: {source_name}")
+                print(f"正在擷取: {source_name}")
                 try:
                     if 'youtube.com' in url:
-                        # 使用 urllib 作為 YouTube RSS 的退避方案，因為 httpx 容易遇到 TLS 握手被阻擋的問題
-                        def fetch_yt():
-                            req = urllib.request.Request(url, headers=headers)
-                            with urllib.request.urlopen(req, timeout=30) as resp:
-                                return resp.read().decode('utf-8')
-                        text_data = await asyncio.to_thread(fetch_yt)
-                        root = ET.fromstring(text_data)
-                    else:
-                        response = await client.get(url)
-                        response.raise_for_status()
-                        root = ET.fromstring(response.text)
+                        # YouTube 容易遇到 TLS 握手被阻擋 (UNEXPECTED_EOF_WHILE_READING)，改使用 YouTube API v3
+                        api_key = os.getenv("YOUTUBE_API_KEY")
+                        if not api_key:
+                            print(f"警告: 尚未設定 YOUTUBE_API_KEY，跳過 YouTube ({source_name})")
+                            continue
+                        
+                        parsed = urlparse(url)
+                        qs = parse_qs(parsed.query)
+                        channel_id = qs.get('channel_id', [None])[0]
+                        if not channel_id or not channel_id.startswith('UC'):
+                            continue
+                            
+                        # 將 Channel ID (UC...) 轉成 Uploads Playlist ID (UU...)，每次 Query 只需 1 Quota
+                        playlist_id = 'UU' + channel_id[2:]
+                        api_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={playlist_id}&maxResults=10&key={api_key}"
+                        
+                        yt_resp = await client.get(api_url)
+                        yt_resp.raise_for_status()
+                        yt_data = yt_resp.json()
+                        
+                        for item in yt_data.get('items', []):
+                            snippet = item.get('snippet', {})
+                            title = snippet.get('title', '')
+                            video_id = snippet.get('resourceId', {}).get('videoId', '')
+                            link = f"https://www.youtube.com/watch?v={video_id}"
+                            abstract = snippet.get('description', '')[:500]
+                            pub_date_str = snippet.get('publishedAt', '')
+                            
+                            try:
+                                pub_date = datetime.fromisoformat(pub_date_str.replace('Z', '+00:00'))
+                            except ValueError as e:
+                                print(f"無法解析時間 {pub_date_str}: {e}")
+                                pub_date = now_utc
+                            
+                            all_articles.append({
+                                "source": source_name,
+                                "title": title,
+                                "url": link,
+                                "abstract": abstract.strip(),
+                                "pub_date": pub_date.isoformat(),
+                                "is_recent": pub_date >= one_day_ago
+                            })
+                        continue  # 處理完 YouTube 後進入下一個 loop
+
+                    # 處理非 YouTube 的一般 RSS
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    root = ET.fromstring(response.text)
                     
-                    # 判斷是否為 Atom feed (例如 YouTube)
+                    # 處理 Atom / RSS XML
                     if root.tag.endswith('feed'):
-                        ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+                        ns = {'atom': 'http://www.w3.org/2005/Atom'}
                         for entry in root.findall('.//atom:entry', ns):
                             title = entry.find('atom:title', ns).text
                             link = entry.find('atom:link', ns).get('href')
                             
-                            # 解析摘要 (Media group 內的描述)
-                            media_ns = {'media': 'http://search.yahoo.com/mrss/'}
-                            media_group = entry.find('media:group', media_ns)
                             abstract = ""
-                            if media_group is not None:
-                                desc = media_group.find('media:description', media_ns)
-                                if desc is not None and desc.text:
-                                    abstract = desc.text[:500]
-
+                            content = entry.find('atom:content', ns)
+                            if content is not None and content.text:
+                                soup = BeautifulSoup(content.text, 'html.parser')
+                                abstract = soup.get_text(separator=' ').strip()[:500]
+                                
                             pub_date_str = entry.find('atom:published', ns).text
                             try:
                                 pub_date = datetime.fromisoformat(pub_date_str)
@@ -71,24 +106,14 @@ class ArticleScraper:
                                 print(f"無法解析時間 {pub_date_str}: {e}")
                                 pub_date = now_utc
 
-                            if pub_date >= one_day_ago:
-                                all_articles.append({
-                                    "source": source_name,
-                                    "title": title,
-                                    "url": link,
-                                    "abstract": abstract.strip(),
-                                    "pub_date": pub_date.isoformat(),
-                                    "is_recent": True
-                                })
-                            else:
-                                all_articles.append({
-                                    "source": source_name,
-                                    "title": title,
-                                    "url": link,
-                                    "abstract": abstract.strip(),
-                                    "pub_date": pub_date.isoformat(),
-                                    "is_recent": False
-                                })
+                            all_articles.append({
+                                "source": source_name,
+                                "title": title,
+                                "url": link,
+                                "abstract": abstract.strip(),
+                                "pub_date": pub_date.isoformat(),
+                                "is_recent": pub_date >= one_day_ago
+                            })
                     else:
                         for item in root.findall('.//item'):
                             title = item.find('title').text
