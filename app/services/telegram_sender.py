@@ -18,9 +18,7 @@ class TelegramSender:
         # 使用 HTML 格式，因為 Telegram 的 MarkdownV2 對特殊符號的跳脫有非常嚴格的限制
         # 而我們處理的是程式碼，用 HTML 標籤 <b>, <code>, <pre> 比較不容易壞掉
         
-        message = f"📚 <b>【間隔重複複習】</b>\n\n"
-        message += f"🏷 <b>類型：</b> {node_label}\n"
-        message += f"📌 <b>標題：</b> {node_title}\n\n"
+        message = f"{node_title}\n\n"
         
         # 處理內容，簡易跳脫 HTML 特殊字元 (如 <, >, &)
         safe_content = node_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

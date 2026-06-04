@@ -35,7 +35,7 @@ class EdgeRelation(str, Enum):
 class KnowledgeNode(BaseModel):
     local_id: str = Field(description="局部唯一識別碼，例如 'node_1'")
     label: NodeLabel = Field(description="節點標籤")
-    title: str = Field(description="快速理解這個節點的名詞標題(如 'Pandas', 'Adaptive Chunking')")
+    title: str = Field(description="快速理解這個節點的標題。必須包含技術上下文，明確標示所屬的語言、框架或模組(如 'Python open() 的 x 模式', 'Pandas Adaptive Chunking')")
     content: str = Field(description="必須是獨立且完整的知識內容：包含「發生情境」、「解決痛點」、「為什麼這樣寫更好」，並在最終附上具體的 Markdown 程式碼範例。絕對不能只有純程式碼或純定義。")
 
 class KnowledgeEdge(BaseModel):
@@ -165,7 +165,7 @@ class LLMExtractor:
    - 在 `content` 中必須依序寫出：① 這個知識發生在什麼實務情境？ ② 解決了什麼具體痛點或為何這樣寫更好？ ③ 附上包含原本作者情境的 Markdown 程式碼範例。
    - 絕對禁止將「純概念」與「純程式碼」拆分成兩個獨立而無上下關聯的節點。如果該知識點在原文中缺乏足夠的上下文與實戰價值，請直接捨棄，不要提取。
 3. 節點的 `local_id` 欄位請使用英文技術專有名詞。
-4. `title` 與解釋性欄位必須使用**繁體中文**深入淺出地解釋。
+4. `title` 命名必須具備「高度上下文識別度」：絕對不能使用模糊的名詞（例如：不要只寫「使用 'x' 模式」），必須明確前綴其所屬的「語言、套件、API 或框架名稱」（例如：「Python open() 函數的 'x' 模式」）。其他解釋性欄位使用**繁體中文**深入淺出地解釋。
 5. 程式碼隔離：如果是 `Syntax_Example` 標籤，必須完整保留原始 Markdown 程式碼區塊（如 ```python ... ```），且必須與上方的情境描述包裝在同一個 `content` 屬性中，絕對不可翻譯或刪減縮排。
 6. 如果是在其餘標籤的內容中出現行內代碼，也請保留原始英文。
 
