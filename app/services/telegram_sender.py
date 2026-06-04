@@ -45,15 +45,20 @@ class TelegramSender:
         }
         
         # 設定較長的超時時間 (例如 30 秒)，並加上重試邏輯
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        timeout_settings = httpx.Timeout(45.0, connect=20.0, read=45.0)
+        transport_settings = httpx.AsyncHTTPTransport(retries=5)
+        
+        async with httpx.AsyncClient(timeout=timeout_settings, transport=transport_settings) as client:
             try:
-                response = await client.post(self.api_url, json=payload)
+                # 增加 User-Agent 避免有些防火牆或防護機制阻擋
+                headers = {"User-Agent": "Knowfetch-Bot/1.0"}
+                response = await client.post(self.api_url, json=payload, headers=headers)
                 if response.status_code != 200:
                     print(f"Telegram API 傳送失敗 ({response.status_code}): {response.text}")
                     return False
                 return True
             except httpx.TimeoutException as e:
-                print(f"Telegram API 連線超時或讀取超時，請檢查網路。詳細錯誤: {e}")
+                print(f"Telegram API 連線超時或讀取超時，請檢查網路。詳細錯誤: {type(e).__name__} - {e}")
                 return False
             except httpx.RequestError as e:
                 print(f"Telegram API 請求錯誤: {e}")
