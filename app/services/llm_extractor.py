@@ -127,7 +127,7 @@ class LLMExtractor:
         將「自適應分塊」後的文字段落送交 給 LLM，抽出符合 Schema 的 Nodes 與 Edges。
         """
         prompt = f"""
-你是一個知識工程師，你的任務是從下方的技術文本中，抽取出知識圖譜 (Nodes 與 Edges)。
+你是一個專業的 AI 技術翻譯與知識工程師。你的任務是從下方的技術文本中，抽取出知識圖譜 (Nodes 與 Edges) **並將其翻譯為繁體中文**。
 
 【本體論 (Ontology) 限制】：
 [節點標籤 Node Labels]:
@@ -135,15 +135,20 @@ class LLMExtractor:
 - Library: 函式庫 (例如: Pandas, PyTorch)
 - Concept: 核心概念 (例如: Adaptive Chunking, DataFrame)
 - Method: 具體方法或函數 (例如: read_csv(), chunk_article())
-- Syntax_Example: 程式碼範例 (必須保留完整代碼)
+- Syntax_Example: 程式碼範例 (必須保留原始程式碼，不可翻譯)
 
 [關係類型 Relationships Edges]:
 - Library —[BELONGS_TO]→ Technology
 - Method —[IMPLEMENTS]→ Concept
 - Syntax_Example —[ILLUSTRATES]→ Method 或 Concept
 
-請盡可能捕捉文本中的核心知識與程式碼範例，建立關係，確保知識可以被間隔重複引擎 (FSRS) 用來複習。
-如果此段落沒有太多具體名詞，則盡量提取至少一個 Concept。
+【翻譯與提取指令】：
+1. 所有節點的 `title` 與 `content` 欄位必須使用**繁體中文**。
+2. **程式碼保留**：如果是 `Syntax_Example` 標籤，其 `content` 必須保留原始 Markdown 程式碼內容，絕對不要翻譯。
+3. 如果是在其餘標籤的 `content` 中出現行內代碼 (如 `pd.read_csv()`)，也請保留原始英文。
+4. 技術專有名詞若無通用的中文翻譯，可保留英文或在中文後括號備註英文。
+5. 請盡可能捕捉文本中的核心知識與程式碼範例，建立關係，確保知識可以被間隔重複引擎 (FSRS) 用來複習。
+6. 如果此段落沒有太多具體名詞，則盡量提取至少一個 Concept。
 
 【文本內容】：
 {chunk_text}
