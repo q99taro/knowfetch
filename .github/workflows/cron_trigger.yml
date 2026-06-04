@@ -19,7 +19,7 @@ jobs:
       - name: Send POST request to HF Space
         run: |
           echo "Triggering Pipeline..."
-          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
+          curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
                -H "Content-Type: application/json" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
 
@@ -32,6 +32,6 @@ jobs:
       - name: Send POST request to HF Space
         run: |
           echo "Triggering Review..."
-          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
+          curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
                -H "Content-Type: application/json" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
