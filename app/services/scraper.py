@@ -15,8 +15,8 @@ class ArticleScraper:
     FEEDS = {
         "kdnuggets": "https://www.kdnuggets.com/feed",
         "towardsdatascience": "https://towardsdatascience.com/feed/",
-        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UClQy9Goi6U9Xv5ZpurzHkcw",
-        "youtube_vivian": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ"
+        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ",
+        "youtube_vivian": "https://www.youtube.com/feeds/videos.xml?channel_id=UCyB2RBqKbxDPGCs1PokeUiA"
     }
 
     async def fetch_latest_articles(self) -> List[Dict[str, str]]:
@@ -160,11 +160,33 @@ class ArticleScraper:
             
             try:
                 # 嘗試抓取繁中、簡中、或英文的字幕
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                full_text = " ".join([entry['text'] for entry in transcript])
+                try:
+                    # 舊版 YouTubeTranscriptApi (例如 v0.x)
+                    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
+                        if transcript and isinstance(transcript[0], dict):
+                            full_text = " ".join([entry['text'] for entry in transcript])
+                        else:
+                            full_text = " ".join([str(t) for t in transcript])
+                    # 新版 YouTubeTranscriptApi (例如 v1.x+)
+                    elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                        # 有的過渡版本使用 list_transcripts
+                        tl = YouTubeTranscriptApi.list_transcripts(video_id)
+                        t = tl.find_transcript(['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
+                        transcript = t.fetch()
+                        full_text = " ".join([entry['text'] for entry in transcript])
+                    else:
+                        transcript = YouTubeTranscriptApi().fetch(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
+                        # FetchedTranscriptSNippet object has .text
+                        full_text = " ".join([snippet.text for snippet in transcript])
+                except Exception as inner_e:
+                    raise inner_e
+
                 return self._clean_text(full_text)
             except Exception as e:
+                import traceback
                 print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
+                print(traceback.format_exc())
                 return ""
 
         # --- 禮貌性延遲 ---
