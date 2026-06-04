@@ -85,6 +85,7 @@ SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_service_role_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
+CRON_SECRET=your_custom_secret_for_api_auth
 ```
 
 **3. 觸發核心模組**
@@ -96,3 +97,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 7860 --reload
 python -m app.tasks.pipeline
 python -m app.tasks.daily_review
 ```
+
+**4. 雲端部署與自動化排程 (Zero-Cost Deployment)**
+本專案原生支援 **Hugging Face Spaces (Docker 部署)**。
+為解決免費空間的休眠機制，專案內建 `.github/workflows/cron_trigger.yml`，透過 **GitHub Actions** 每天定時發送帶有 `X-Cron-Secret` 標頭的 HTTP 請求。這樣不僅能自動觸發爬蟲與推播流水線，還能順便喚醒休眠中的 HF Space 伺服器，達成真正的無伺服器全自動化體驗。
+> ⚠️ **安全性提醒**：部署至雲端時，請務必將上方所有環境變數設定在伺服器後台的 **Secrets** 中（而非公開的 Variables），以防止金鑰外洩。
