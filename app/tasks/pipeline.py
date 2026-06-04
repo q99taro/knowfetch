@@ -22,7 +22,7 @@ class KnowledgePipeline:
         # ---------------------------------------------------------
         # 步驟 1：抓取 24 小時內的所有文章清單
         # ---------------------------------------------------------
-        print("[Step 1] 正在抓取 KDnuggets 與 Towards Data Science 的 RSS...")
+        print("[Step 1] 正在抓取網誌 RSS 與 YouTube 影片資訊...")
         raw_articles = await self.scraper.fetch_latest_articles()
         print(f"-> 共抓取到 {len(raw_articles)} 篇候選文章。")
         

@@ -34,8 +34,9 @@ pinned: false
 3. **Semaphore 併發限流防禦 (Strict Rate-Limiting)**  
    - **痛點**：免費 LLM API 擁有極嚴苛的 `15 RPM` 限制，易觸發 HTTP 429 被永久封鎖。
    - **解法**：系統底層實作了帶有 `asyncio.Semaphore` 與動態 `sleep` 冷卻佇列的非同步批次過濾器，實現平滑化的流量控制，杜絕請求中斷。
-4. **Zero-Cost 全自動化流水線 (Serverless CI/CD)**  
-   - **解法**：後端部署於 Hugging Face Spaces (Docker)。為破解免費容器的休眠限制，透過 GitHub Actions Cron 定時發出 HTTP 請求主動喚醒伺服器，並觸發「爬蟲 → 萃取 → 推播」管線，達成全自動且不需要人工干預的運維。
+4. **去中心化的本地全自動流水線 (Local Automation Pipeline)**  
+   - **痛點**：現代技術平台（尤其是 YouTube 與 Medium）對雲端伺服器 (如 AWS、Hugging Face) 進行了最高級別的 IP 防爬蟲封鎖，導致雲端部署屢遭失敗。
+   - **解法**：捨棄傳統的雲端部署，整套管線設計為在本地設備（個人電腦或樹莓派等家用住宅 IP 環境）上運行。透過操作系統內建的排程器（Mac `crontab` 或 Windows 工作排程器）每日定時執行腳本，不但完美避開反爬蟲驗證，還真正達到「零伺服器維護成本」。
 
 ---
 
@@ -57,8 +58,9 @@ graph TD
 ### 🛠️ Tech Stack
 - **Backend Core**: Python 3.10+, `FastAPI`, `asyncio`, `httpx`
 - **NLP & AI**: Google GenAI SDK (`Gemini 3.1 Flash-Lite`), `Regex`, `BeautifulSoup4`
+- **Scraping**: `youtube-transcript-api`, YouTube Data API v3
 - **Database**: Supabase (`PostgreSQL`)
-- **Integration**: Telegram Bot API, GitHub Actions
+- **Integration**: Telegram Bot API
 
 ---
 
@@ -70,13 +72,28 @@ cd knowfetch
 pip install -r requirements.txt
 ```
 
-設定 `.env` 變數 (`GEMINI_API_KEY`, `SUPABASE_URL`, `TELEGRAM_BOT_TOKEN`) 後啟動：
+設定 `.env` 變數 後方能啟動：
+```env
+GEMINI_API_KEY=your_gemini_api_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_anon_key
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+YOUTUBE_API_KEY=your_youtube_v3_api_key
+```
 
+### 🏃 如何執行
+
+**1. 啟動 Webhook 伺服器 (接收 Telegram 點擊反饋)：**
 ```bash
-# 啟動 Webhook 伺服器
 uvicorn app.main:app --host 0.0.0.0 --port 7860 --reload
+```
 
-# 本地手動測試管線
+**2. 本地自動化排程 (每日更新腳本)：**
+你可以透過 Unix `crontab` 每日定時執行以下兩支管線，達成全自動化擷取與複習：
+```bash
+# 抓取最新文章、拆解並透過 AI 寫入資料庫
 python -m app.tasks.pipeline
+
+# 根據 FSRS 演算法，將到期的技術卡片推播至 Telegram
 python -m app.tasks.daily_review
 ```
