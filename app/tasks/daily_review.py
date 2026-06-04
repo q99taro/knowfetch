@@ -61,7 +61,9 @@ class ReviewScheduler:
                 # 所以推播時不再直接更新資料庫。
                 
         except Exception as e:
+            import traceback
             print(f"複習推送發生錯誤: {e}")
+            traceback.print_exc()
 
 if __name__ == "__main__":
     scheduler = ReviewScheduler()
