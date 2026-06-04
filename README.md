@@ -17,7 +17,7 @@ KnowFetch 是一個幫你**「全自動消化技術長文」**的超級助理。
 
 **📊 系統每天的實際運作流程：**
 
-1. **自動巡邏與挑選**：每天早上，系統會定時前往 `Towards Data Science` 與 `KDnuggets` 等知名技術網站，收集 24 小時內最新發布的文章清單。
+1. **自動巡邏與挑選**：每天早上，系統會定時前往 `Towards Data Science` 與 `KDnuggets` 等知名技術網站，以及**YouTube 技術頻道 (如李宏毅教授、Vivian等)**，收集 24 小時內最新發布的文章清單與影片字幕內容。
 2. **AI 精準篩選**：收集到文章後，AI (Gemini) 會根據你的喜好（例如：只要 AI、Data Science 和 Python 教學，不要電腦視覺相關文章），自動把不相干的文章過濾掉。
 3. **長文拆解與代碼保護**：針對入選的好文章，系統會下載全文，並把它切成幾段「容易消化的碎片」。過程中，含有程式碼的部分會被 Python 特殊保護，確保切出來的範例程式碼完整無缺、可以直接執行。
 4. **大局觀萃取與自動翻譯**：為了避免 LLM 在處理長文時「見樹不見林」，系統會以單次最高 **60,000 字元** 的超大區塊，將整篇長文一次性餵給 AI 進行全局掃視。AI 扮演資深實戰專家，摒棄無實質技術細節的科普與初階語法（如 `csv`, `for-loop`），精準搜尋並提煉出文章中的「**最佳實踐 (Best Practices)**」、「效能優化寫法」以及對應的進階套件用法，並**保留完整的上下文脈絡翻譯為繁體中文**。**特別說明：原本的程式碼範例會被原樣保留，不進行翻譯，確保學習時的準確性。**
@@ -46,9 +46,9 @@ KnowFetch 是一個幫你**「全自動消化技術長文」**的超級助理。
 ```mermaid
 graph TD
     subgraph Data_Ingestion [Data Ingestion]
-        A[RSS Feeds] -->|httpx.AsyncClient| B(Supabase Node Deduplication)
+        A[RSS Feeds & YouTube] -->|httpx.AsyncClient / youtube-transcript-api| B(Supabase Node Deduplication)
         B -->|Unique URLs| C{Gemini Batch Filter}
-        C -->|Keep: True| D[Web HTML Extraction]
+        C -->|Keep: True| D[Web HTML / Transcript Extraction]
     end
     subgraph Data_Processing [Data Processing]
         D -->|Raw Document| E(Adaptive Chunker)
@@ -66,7 +66,7 @@ graph TD
 
 ### 🛠️ Tech Stack (技術棧)
 - **Backend**: Python 3.10+, `FastAPI`, `asyncio`, `httpx`
-- **Data Extractor**: `BeautifulSoup4`, `Regex`
+- **Data Extractor**: `BeautifulSoup4`, `Regex`, `youtube-transcript-api`
 - **Generative AI**: Google GenAI SDK (`Gemini 3.1 Flash-Lite`)
 - **Database**: Supabase (`supabase-py`), PostgreSQL (Nodes/Edges Model)
 - **Notification**: Telegram Bot API
