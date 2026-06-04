@@ -51,9 +51,17 @@ class TelegramSender:
             "reply_markup": reply_markup
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self.api_url, json=payload)
-            if response.status_code != 200:
-                print(f"Telegram 傳送失敗: {response.text}")
+        # 設定較長的超時時間 (例如 30 秒)，並加上重試邏輯
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(self.api_url, json=payload)
+                if response.status_code != 200:
+                    print(f"Telegram API 傳送失敗 ({response.status_code}): {response.text}")
+                    return False
+                return True
+            except httpx.ConnectTimeout:
+                print("Telegram API 連線超時，請檢查伺服器網路狀況。")
                 return False
-            return True
+            except Exception as e:
+                print(f"Telegram 發送時發生意外錯誤: {str(e)}")
+                return False
