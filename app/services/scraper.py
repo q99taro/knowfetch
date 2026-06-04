@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+import json
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 import xml.etree.ElementTree as ET
@@ -29,6 +30,71 @@ class ArticleScraper:
             for source_name, url in self.FEEDS.items():
                 print(f"正在擷取 RSS: {source_name}")
                 try:
+                    if 'youtube.com' in url:
+                        match = re.search(r'channel_id=([a-zA-Z0-9_-]+)', url)
+                        if not match:
+                            continue
+                        channel_id = match.group(1)
+                        
+                        chan_url = f"https://www.youtube.com/channel/{channel_id}/videos"
+                        chan_resp = await client.get(chan_url)
+                        chan_resp.raise_for_status()
+                        
+                        yt_data_match = re.search(r'var ytInitialData = (\{.*?\});</script>', chan_resp.text)
+                        if not yt_data_match:
+                            continue
+                        yt_data = json.loads(yt_data_match.group(1))
+                        
+                        tabs = yt_data.get('contents', {}).get('twoColumnBrowseResultsRenderer', {}).get('tabs', [])
+                        v_tab = [t['tabRenderer']['content'] for t in tabs if t.get('tabRenderer', {}).get('title') == '影片']
+                        if not v_tab:
+                            continue
+                            
+                        items = v_tab[0].get('richGridRenderer', {}).get('contents', [])
+                        vids = []
+                        for item in items:
+                            if 'richItemRenderer' in item:
+                                content = item['richItemRenderer']['content']
+                                if 'lockupViewModel' in content:
+                                    vids.append(content['lockupViewModel']['contentId'])
+                                elif 'videoRenderer' in content:
+                                    vids.append(content['videoRenderer']['videoId'])
+                                    
+                        for vid in vids[:3]:
+                            vid_url = f"https://www.youtube.com/watch?v={vid}"
+                            vid_resp = await client.get(vid_url)
+                            vid_resp.raise_for_status()
+                            
+                            pr_match = re.search(r'var ytInitialPlayerResponse = (\{.*?\});</script>', vid_resp.text)
+                            if not pr_match:
+                                continue
+                            pr_data = json.loads(pr_match.group(1))
+                            
+                            microformat = pr_data.get('microformat', {}).get('playerMicroformatRenderer', {})
+                            title = pr_data.get('videoDetails', {}).get('title', '')
+                            pub_date_str = microformat.get('publishDate')
+                            abstract = microformat.get('description', {}).get('simpleText', '')[:500]
+                            link = vid_url
+                            
+                            if not pub_date_str:
+                                continue
+                                
+                            try:
+                                pub_date = datetime.fromisoformat(pub_date_str)
+                            except ValueError as e:
+                                print(f"無法解析時間 {pub_date_str}: {e}")
+                                pub_date = now_utc
+
+                            all_articles.append({
+                                "source": source_name,
+                                "title": title,
+                                "url": link,
+                                "abstract": abstract.strip(),
+                                "pub_date": pub_date.isoformat(),
+                                "is_recent": pub_date >= one_day_ago
+                            })
+                        continue
+
                     response = await client.get(url)
                     response.raise_for_status()
                     
