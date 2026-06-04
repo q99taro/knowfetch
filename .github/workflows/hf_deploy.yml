@@ -22,5 +22,4 @@ jobs:
           max_attempts: 5
           retry_wait_seconds: 60
           command: |
-            git remote add hf https://${{ secrets.HF_USERNAME }}:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/KnowFetch
-            git push --force hf main
+            git push --force https://${{ secrets.HF_USERNAME }}:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/KnowFetch main
