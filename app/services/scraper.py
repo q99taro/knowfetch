@@ -26,7 +26,11 @@ class ArticleScraper:
         now_utc = datetime.now(timezone.utc)
         one_day_ago = now_utc - timedelta(days=1)
         
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
             for source_name, url in self.FEEDS.items():
                 print(f"正在擷取 RSS: {source_name}")
                 try:
