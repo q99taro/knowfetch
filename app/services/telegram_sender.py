@@ -59,9 +59,12 @@ class TelegramSender:
                     print(f"Telegram API 傳送失敗 ({response.status_code}): {response.text}")
                     return False
                 return True
-            except httpx.ConnectTimeout:
-                print("Telegram API 連線超時，請檢查伺服器網路狀況。")
+            except httpx.TimeoutException as e:
+                print(f"Telegram API 連線超時或讀取超時，請檢查網路。詳細錯誤: {e}")
+                return False
+            except httpx.RequestError as e:
+                print(f"Telegram API 請求錯誤: {e}")
                 return False
             except Exception as e:
-                print(f"Telegram 發送時發生意外錯誤: {str(e)}")
+                print(f"Telegram 發送時發生意外錯誤: {type(e).__name__} - {str(e)}")
                 return False
