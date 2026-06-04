@@ -7,10 +7,12 @@ from typing import List, Dict, Optional
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 import re
+import os
+import tempfile
 
 from urllib.parse import urlparse, parse_qs
 import urllib.request
-from youtube_transcript_api import YouTubeTranscriptApi
+import yt_dlp
 
 class ArticleScraper:
     FEEDS = {
@@ -184,33 +186,58 @@ class ArticleScraper:
                 return ""
             
             try:
-                # 嘗試抓取繁中、簡中、或英文的字幕
-                try:
-                    # 舊版 YouTubeTranscriptApi (例如 v0.x)
-                    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
-                        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        if transcript and isinstance(transcript[0], dict):
-                            full_text = " ".join([entry['text'] for entry in transcript])
-                        else:
-                            full_text = " ".join([str(t) for t in transcript])
-                    # 新版 YouTubeTranscriptApi (例如 v1.x+)
-                    elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
-                        # 有的過渡版本使用 list_transcripts
-                        tl = YouTubeTranscriptApi.list_transcripts(video_id)
-                        t = tl.find_transcript(['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        transcript = t.fetch()
-                        full_text = " ".join([entry['text'] for entry in transcript])
-                    else:
-                        transcript = YouTubeTranscriptApi().fetch(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        # FetchedTranscriptSNippet object has .text
-                        full_text = " ".join([snippet.text for snippet in transcript])
-                except Exception as inner_e:
-                    raise inner_e
+                def fetch_yt_dlp_subtitles(target_url: str) -> str:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        opts = {
+                            "skip_download": True,
+                            "writesubtitles": True,
+                            "writeautomaticsub": True,
+                            "subtitleslangs": ["zh-Hant", "zh-TW", "zh-Hans", "zh", "en"],
+                            "outtmpl": os.path.join(tmpdir, "subs.%(ext)s"),
+                            "quiet": True,
+                            "no_warnings": True
+                        }
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            ydl.download([target_url])
+                        
+                        vtt_file = None
+                        for f in os.listdir(tmpdir):
+                            if f.endswith('.vtt'):
+                                vtt_file = os.path.join(tmpdir, f)
+                                break
+                        
+                        if not vtt_file:
+                            print(f"沒有找到可用的字幕檔: {target_url}")
+                            return ""
+                            
+                        # 讀取並手動過濾 VTT 字幕檔 (移除時間軸與標籤)
+                        with open(vtt_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            
+                        text_lines = []
+                        for line in lines:
+                            line = line.strip()
+                            if not line or line.startswith('WEBVTT') or line.startswith('Kind:') or line.startswith('Language:'):
+                                continue
+                            if '-->' in line:
+                                continue
+                            # 移除 HTML / VTT tag，例如 <c>...</c> 
+                            line = re.sub(r'<[^>]+>', '', line)
+                            
+                            text_lines.append(line)
+                            
+                        # 移除連續重複的句子（自動字幕常見狀況）
+                        cleaned = []
+                        for t in text_lines:
+                            if t and (not cleaned or cleaned[-1] != t):
+                                cleaned.append(t)
+                        return " ".join(cleaned)
 
+                full_text = await asyncio.to_thread(fetch_yt_dlp_subtitles, url)
                 return self._clean_text(full_text)
             except Exception as e:
                 import traceback
-                print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
+                print(f"無法使用 yt_dlp 抓取 YouTube 字幕 {video_id}: {e}")
                 print(traceback.format_exc())
                 return ""
 
