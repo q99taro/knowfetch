@@ -67,7 +67,10 @@ class ArticleScraper:
                             microformat = pr_data.get('microformat', {}).get('playerMicroformatRenderer', {})
                             title = pr_data.get('videoDetails', {}).get('title', '')
                             pub_date_str = microformat.get('publishDate')
-                            abstract = microformat.get('description', {}).get('simpleText', '')[:500]
+                            raw_abstract = microformat.get('description', {}).get('simpleText', '')
+                            # 過濾掉 YouTube 說明欄位常出現的超連結，避免推銷內容佔用字數
+                            clean_abstract = re.sub(r'http[s]?://\S+', '', raw_abstract)
+                            abstract = clean_abstract.strip()[:1000]
                             link = vid_url
                             
                             if not pub_date_str:

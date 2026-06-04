@@ -21,7 +21,7 @@ KnowFetch 是一個幫你**「全自動消化技術長文」**的超級助理。
 2. **AI 精準篩選**：收集到文章後，AI (Gemini) 會根據你的喜好（例如：只要 AI、Data Science 和 Python 教學，不要電腦視覺相關文章），自動把不相干的文章過濾掉。
 3. **長文拆解與代碼保護**：針對入選的好文章，系統會下載全文，並把它切成幾段「容易消化的碎片」。過程中，含有程式碼的部分會被 Python 特殊保護，確保切出來的範例程式碼完整無缺、可以直接執行。
 4. **大局觀萃取與自動翻譯**：為了避免 LLM 在處理長文時「見樹不見林」，系統會以單次最高 **60,000 字元** 的超大區塊，將整篇長文一次性餵給 AI 進行全局掃視。AI 扮演資深實戰專家，摒棄無實質技術細節的科普與初階語法（如 `csv`, `for-loop`），精準搜尋並提煉出文章中的「**最佳實踐 (Best Practices)**」、「效能優化寫法」以及對應的進階套件用法，並**保留完整的上下文脈絡翻譯為繁體中文**。**特別說明：原本的程式碼範例會被原樣保留，不進行翻譯，確保學習時的準確性。**
-**5. 動態節奏推播與互動式 FSRS 反饋**：每天晚上，系統內建的「間隔重複演算法 (FSRS-Lite)」會根據您的記憶衰退曲線，推播今天大腦該複習的知識點。為契合工程師的工作節奏，系統內建 **動態排程機制 (Dynamic Batching)**：平日（週一至週五）限制每次推播數量以避免資訊疲勞，假日（週末）則自動增加學習劑量。時間一到，你的 **Telegram** 會收到一張精美且**具備完整前後文的中文深階知識卡片**，卡片底部附有「忘記 / 困難 / 普通 / 簡單」四個互動按鈕（Inline Keyboard），點擊後透過 FastAPI Webhook 即時更新您的個人大腦記憶參數，精準排程下一次的複習時間！
+**5. 動態節奏推播與複習反饋**：每天晚上，系統會根據排程，推播今天大腦該複習的知識點。為契合工程師的工作節奏，系統內建 **動態排程機制 (Dynamic Batching)**：平日（週一至週五）限制每次推播數量以避免資訊疲勞，假日（週末）則自動增加學習劑量。時間一到，你的 **Telegram** 會收到一張精美且**具備完整前後文的中文深階知識卡片**，卡片底部附有「已熟記 (刪除)」按鈕（Inline Keyboard），點擊後透過 FastAPI Webhook 即時從資料庫清空該知識點，若尚未熟記則系統會在後續再次推播給你複習！（註：正在逐步整合完整的 FSRS-Lite 四階段間隔重複回饋機制）
 
 ### ✨ 系統設計與架構決策 (Engineering Trade-offs & Architecture)
 
@@ -57,11 +57,11 @@ graph TD
         F -->|JSON Graph Nodes & Edges| G[(Supabase Postgres)]
     end
     subgraph Spaced_Repetition [Spaced Repetition FSRS]
-        G -->|Daily Check due_date| H(FSRS Engine)
+        G -->|Daily Check due_date| H(Daily Review Scheduler)
         H -->|Context: Fetch Linked Code| I[Telegram API]
         I -->|Push Alert with Buttons| J((User))
-        J -->|Click: 忘記/困難/普通/簡單| K[FastAPI Webhook]
-        K -->|Update Memory Parameters| G
+        J -->|Click: 已熟記 (刪除)| K[FastAPI Webhook]
+        K -->|Delete from DB| G
     end
 ```
 
