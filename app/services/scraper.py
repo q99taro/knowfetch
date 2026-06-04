@@ -40,7 +40,7 @@ class ArticleScraper:
                         yt_data = json.loads(yt_data_match.group(1))
                         
                         tabs = yt_data.get('contents', {}).get('twoColumnBrowseResultsRenderer', {}).get('tabs', [])
-                        v_tab = [t['tabRenderer']['content'] for t in tabs if t.get('tabRenderer', {}).get('title') == '影片']
+                        v_tab = [t['tabRenderer']['content'] for t in tabs if t.get('tabRenderer', {}).get('selected') == True]
                         if not v_tab:
                             continue
                             
@@ -142,40 +142,40 @@ class ArticleScraper:
                             
                             # 解析摘要 (過濾掉 HTML 標籤)
                             description_node = item.find('description')
-                        abstract = ""
-                        if description_node is not None and description_node.text:
-                            soup = BeautifulSoup(description_node.text, 'html.parser')
-                            abstract = soup.get_text(separator=' ').strip()
-                            
-                        # 解析時間
-                        pub_date_str = item.find('pubDate').text
-                        try:
-                            # KDnuggets & Medium RSS pubDate 格式通常是: "Wed, 03 Jun 2026 12:00:00 +0000" 或 "GMT"
-                            if pub_date_str.endswith('GMT'):
-                                pub_date_str = pub_date_str.replace('GMT', '+0000')
-                            pub_date = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
-                        except ValueError as e:
-                            print(f"無法解析時間 {pub_date_str}: {e}")
-                            pub_date = now_utc
+                            abstract = ""
+                            if description_node is not None and description_node.text:
+                                soup = BeautifulSoup(description_node.text, 'html.parser')
+                                abstract = soup.get_text(separator=' ').strip()
+                                
+                            # 解析時間
+                            pub_date_str = item.find('pubDate').text
+                            try:
+                                # KDnuggets & Medium RSS pubDate 格式通常是: "Wed, 03 Jun 2026 12:00:00 +0000" 或 "GMT"
+                                if pub_date_str.endswith('GMT'):
+                                    pub_date_str = pub_date_str.replace('GMT', '+0000')
+                                pub_date = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                            except ValueError as e:
+                                print(f"無法解析時間 {pub_date_str}: {e}")
+                                pub_date = now_utc
 
-                        if pub_date >= one_day_ago:
-                            all_articles.append({
-                                "source": source_name,
-                                "title": title,
-                                "url": link,
-                                "abstract": abstract,
-                                "pub_date": pub_date.isoformat(),
-                                "is_recent": True
-                            })
-                        else:
-                            all_articles.append({
-                                "source": source_name,
-                                "title": title,
-                                "url": link,
-                                "abstract": abstract,
-                                "pub_date": pub_date.isoformat(),
-                                "is_recent": False
-                            })
+                            if pub_date >= one_day_ago:
+                                all_articles.append({
+                                    "source": source_name,
+                                    "title": title,
+                                    "url": link,
+                                    "abstract": abstract,
+                                    "pub_date": pub_date.isoformat(),
+                                    "is_recent": True
+                                })
+                            else:
+                                all_articles.append({
+                                    "source": source_name,
+                                    "title": title,
+                                    "url": link,
+                                    "abstract": abstract,
+                                    "pub_date": pub_date.isoformat(),
+                                    "is_recent": False
+                                })
                 except Exception as e:
                     print(f"擷取 {source_name} 發生錯誤: {e}")
                     
