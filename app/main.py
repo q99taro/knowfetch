@@ -1,4 +1,5 @@
-﻿from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Depends, Request
+﻿from fastapi import FastAPI, Header, HTTPException, Depends, Request
+from contextlib import asynccontextmanager
 import os
 import httpx
 
@@ -8,10 +9,37 @@ from app.tasks.daily_review import ReviewScheduler
 from app.core.database import get_db
 from app.services.fsrs import FSRSLite
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 伺服器啟動時，自動向 Telegram 註冊 Webhook
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    space_host = os.getenv("SPACE_HOST") # Hugging Face Spaces 內建環境變數
+    
+    # 如果使用者有自行設定 WEBHOOK_URL 優先使用，否則使用 HF Space 預設網址
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if not webhook_url and space_host:
+        webhook_url = f"https://{space_host}/webhook/telegram"
+        
+    if bot_token and webhook_url:
+        print(f"====== 正在設定 Telegram Webhook: {webhook_url} ======")
+        async with httpx.AsyncClient() as client:
+            try:
+                res = await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/setWebhook",
+                    json={"url": webhook_url}
+                )
+                print("Webhook 註冊結果:", res.text)
+            except Exception as e:
+                print(f"Webhook 註冊失敗: {e}")
+                
+    yield
+    # 伺服器關閉時的清理動作 (Optional)
+
 app = FastAPI(
     title="KnowFetch",
     description="零成本自動化技術知識圖譜與間隔重複系統",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 CRON_SECRET = os.getenv("CRON_SECRET", "default_secret")
