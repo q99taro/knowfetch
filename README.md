@@ -17,8 +17,7 @@ pinned: false
 
 ### � 系統畫面 (Screenshot)
 
-<!-- 💡 請在這裡貼上你的工具截圖 (可直接在 GitHub 編輯頁面貼上圖片) -->
-*(Screenshot placeholder)*
+<img width="295" height="639" alt="IMG_9599" src="https://github.com/user-attachments/assets/3719893b-91c8-417c-ad79-b0f3fac4569f" />
 
 ---
 
