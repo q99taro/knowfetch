@@ -78,17 +78,28 @@ def read_root():
 @app.post("/setup-webhook", dependencies=[Depends(verify_cron_secret)])
 async def setup_webhook():
     """手動觸發 Telegram Webhook 註冊，供背景任務失敗時補救。"""
+    import asyncio
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     space_host = os.getenv("SPACE_HOST")
     webhook_url = os.getenv("WEBHOOK_URL") or (f"https://{space_host}/webhook/telegram" if space_host else None)
     if not bot_token or not webhook_url:
         raise HTTPException(status_code=400, detail="缺少 TELEGRAM_BOT_TOKEN 或 Webhook URL 設定")
+    last_error = None
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
-        res = await client.post(
-            f"https://api.telegram.org/bot{bot_token}/setWebhook",
-            json={"url": webhook_url}
-        )
-    return {"webhook_url": webhook_url, "telegram_response": res.json()}
+        for attempt in range(1, 4):
+            try:
+                res = await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/setWebhook",
+                    json={"url": webhook_url}
+                )
+                return {"webhook_url": webhook_url, "telegram_response": res.json()}
+            except httpx.ConnectTimeout as e:
+                last_error = repr(e)
+                if attempt < 3:
+                    await asyncio.sleep(10 * attempt)
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Webhook 註冊失敗: {repr(e)}")
+    raise HTTPException(status_code=504, detail=f"Webhook 連線逾時（重試 3 次皆失敗）: {last_error}")
 
 @app.post("/trigger-pipeline", status_code=200, dependencies=[Depends(verify_cron_secret)])
 async def trigger_pipeline():
