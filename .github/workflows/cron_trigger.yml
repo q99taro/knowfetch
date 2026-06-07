@@ -14,18 +14,18 @@ jobs:
     steps:
       - name: Wake up HF Space & Send POST request
         run: |
-          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
-               -H "Content-Type: application/json" \
-               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
-               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" || true
+          # 1. 僅存取首頁以喚醒 Space，避免重複執行 Pipeline
+          curl -s "${{ secrets.HF_SPACE_URL }}/" > /dev/null || true
 
+          # 等待一段時間讓容器啟動
           sleep 120
 
+          # 2. 正式觸發 Pipeline，並將逾時時間延長至 900 秒 (15 分鐘)
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
                -H "Content-Type: application/json" \
                -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-               --retry 5 --retry-delay 30 --max-time 120
+               --retry 3 --retry-delay 30 --max-time 900
 
   trigger_review:
     if: github.event.schedule == '0 0,4,9,13 * * 1-5' || github.event.schedule == '0 1,13 * * 0,6' || github.event_name == 'workflow_dispatch'
@@ -33,15 +33,14 @@ jobs:
     steps:
       - name: Wake up HF Space & Send POST request
         run: |
-          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
-               -H "Content-Type: application/json" \
-               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
-               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" || true
+          # 1. 僅存取首頁以喚醒 Space
+          curl -s "${{ secrets.HF_SPACE_URL }}/" > /dev/null || true
 
-          sleep 120
+          sleep 60
 
+          # 2. 觸發 Review，並將逾時時間延長至 300 秒 (5 分鐘)
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
                -H "Content-Type: application/json" \
                -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-               --retry 5 --retry-delay 30 --max-time 120
+               --retry 3 --retry-delay 30 --max-time 300
