@@ -89,6 +89,19 @@ class KnowledgePipeline:
         if other_articles:
             print(f"-> 將 {len(other_articles)} 篇文章交由 Gemini 進行篩選...")
             llm_filtered = self.llm_extractor.batch_filter_articles(other_articles)
+            
+            # [修正] 錄入被 LLM 篩選掉的文章至 ignored_urls，避免下次流水線重複處理
+            filtered_urls_set = {art['url'] for art in llm_filtered}
+            rejected_urls = [art['url'] for art in other_articles if art['url'] not in filtered_urls_set]
+            if rejected_urls:
+                print(f"   -> 有 {len(rejected_urls)} 篇文章被 LLM 判定為不符合條件，將其加入略過清單。")
+                try:
+                    # 批次寫入 ignored_urls
+                    ignored_data = [{"url": url} for url in rejected_urls]
+                    self.db.table("ignored_urls").insert(ignored_data).execute()
+                except Exception as e:
+                    print(f"   -> 寫入 ignored_urls 失敗 (可能已存在): {e}")
+
             filtered_articles.extend(llm_filtered)
             
             # 剛呼叫完 LLM，強制暫停等待速率冷卻
@@ -117,7 +130,11 @@ class KnowledgePipeline:
             # Step 4: 抓取全文 HTML 轉 Markdown Text
             content_text = await self.scraper.fetch_article_content(article['url'], article['source'])
             if not content_text:
-                print("-> 無法擷取文章內容，跳過。")
+                print("-> 無法擷取文章內容，跳過並加入忽略清單。")
+                try:
+                    self.db.table("ignored_urls").insert({"url": article['url']}).execute()
+                except:
+                    pass
                 continue
                 
             # Step 5: 自適應分塊 (Adaptive Chunking)
@@ -125,6 +142,7 @@ class KnowledgePipeline:
             print(f"-> 文章成功切割為 {len(chunks)} 個安全區塊。")
             
             # Step 6: 針對每個 Chunk 呼叫 LLM 抽取知識圖譜
+            total_nodes_extracted = 0
             for c_idx, chunk in enumerate(chunks):
                 print(f"  -> 處理 Chunk {c_idx+1}/{len(chunks)} ... (等待 Gemini 冷卻 5 秒)")
                 
@@ -136,8 +154,17 @@ class KnowledgePipeline:
                     print("     -> 該區塊未擷取到有效知識，跳過。")
                     continue
                 
+                total_nodes_extracted += len(graph_data.nodes)
                 print(f"     -> 成功抽取出 {len(graph_data.nodes)} 個節點與 {len(graph_data.edges)} 條邊，準備寫入 Supabase...")
                 self.save_graph_to_db(graph_data, article['url'])
+
+            # [修正] 如果整篇文章都沒抽到任何節點，也應該標註為已處理，避免下次重複執行 LLM 篩選與抓取
+            if total_nodes_extracted == 0:
+                print(f"-> 文章 {article['title']} 未抽取出任何知識點，加入忽略清單。")
+                try:
+                    self.db.table("ignored_urls").insert({"url": article['url']}).execute()
+                except:
+                    pass
 
             # 爬取下一篇文章前，判斷是否為 YouTube 影片，進行隨機延遲 (分散請求避免被 ban)
             if i < len(filtered_articles) - 1 and article['source'].startswith('youtube'):

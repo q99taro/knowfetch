@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.services.telegram_sender import TelegramSender
+from app.services.fsrs import FSRSLite
 
 # 程序內的執行鎖：cron 可能在短時間內連續觸發 /trigger-review，
 # 在同一個 uvicorn 程序中造成多個 async 任務並發執行（log 會出現交錯的推播）。
@@ -36,32 +37,36 @@ class ReviewScheduler:
         now_iso = now_utc.isoformat()
         
         try:
-            # 優先找已經到期的節點 (FSRS 演算法後續會精確更新 due_date)
             # 根據星期決定預設推播數量：平日(週一至五) 2 個，假日(週六、日) 3 個
             default_batch = "2" if now_utc.weekday() < 5 else "3"
             batch_size = int(os.getenv("REVIEW_BATCH_SIZE", default_batch))
             
-            res = self.db.table("nodes").select("*").lt("due_date", now_iso).limit(batch_size).execute()
+            # --- 改進版選取邏輯：混合「新加入」與「到期」的節點 ---
+            # 避免舊內容堆積（Backlog）導致新內容永遠排不進去
             
-            nodes_to_review = res.data if res.data else []
+            # 1. 優先抓取新加入 (due_date is null) 的節點，佔一半份額
+            new_node_count = max(1, batch_size // 2)
+            new_res = self.db.table("nodes").select("*").is_("due_date", "null").order("created_at", desc=True).limit(new_node_count).execute()
+            nodes_to_review = new_res.data if new_res.data else []
             
-            # 如果到期節點不夠，找最新建立但尚未複習過 (due_date is null) 的節點來候補
-            if len(nodes_to_review) < batch_size:
-                needed = batch_size - len(nodes_to_review)
-                extra_res = self.db.table("nodes").select("*").is_("due_date", "null").order("created_at", desc=True).limit(needed).execute()
-                if extra_res.data:
-                    nodes_to_review.extend(extra_res.data)
+            # 2. 抓取到期的節點，補足剩餘份額 (或更多，如果新節點不夠)
+            needed = batch_size - len(nodes_to_review)
+            if needed > 0:
+                due_res = self.db.table("nodes").select("*").lt("due_date", now_iso).order("due_date", desc=False).limit(needed).execute()
+                if due_res.data:
+                    nodes_to_review.extend(due_res.data)
 
             if not nodes_to_review:
                 print("-> 目前資料庫中沒有知識節點可以複習。")
                 return
                 
-            # [重要防禦] Race Condition (併發競爭) 處理：
-            # 若有兩支程式同時觸發，它們會抓到一樣的節點並發送兩次。
-            # 因此我們先「提早推遲」這些被選中節點的 due_date，如同上鎖一般，後續的程式就不會抓到它們。
+# [重要防禦] Race condition 預鎖：先把這批節點的 due_date 設成 1 小時後，
+            # 避免 cron 在同一時間觸發兩次時重複推播相同節點。
+            # 等實際發送成功後再用 FSRS 算出正確的下次到期日 (成功才 commit)。
+            # 若全部發送失敗，則在最後重設 due_date = null 讓節點下次繼續被排入。
+            lock_time = (now_utc + timedelta(hours=1)).isoformat()
             node_ids = [n['id'] for n in nodes_to_review]
-            postpone_time = (now_utc + timedelta(hours=12)).isoformat()
-            self.db.table("nodes").update({"due_date": postpone_time}).in_("id", node_ids).execute()
+            self.db.table("nodes").update({"due_date": lock_time}).in_("id", node_ids).execute()
                 
             for node in nodes_to_review:
                 node_id = node['id']
@@ -89,7 +94,21 @@ class ReviewScheduler:
                 
                 if success:
                     print(f"-> 🎉 成功推送複習訊息：{node['title']}")
-                    # (due_date 已在前面提早推遲，故此處不需再 update)
+                    # 發送成功 -> 用 FSRS 算出實際的下次複習時間（正式 commit）
+                    fsrs_res = FSRSLite.calculate_next_review(
+                        rating=3,
+                        stability=node.get("stability", 0.0),
+                        difficulty=node.get("difficulty", 0.0)
+                    )
+                    self.db.table("nodes").update({
+                        "due_date": fsrs_res["due_date"],
+                        "stability": fsrs_res["stability"],
+                        "difficulty": fsrs_res["difficulty"]
+                    }).eq("id", node_id).execute()
+                else:
+                    # 發送失敗 -> 重設 due_date = null，讓這個節點下次仍能被排入推播
+                    print(f"-> ⚠️ 推送失敗，已重設節點排程，下次執行時會重試：{node['title']}")
+                    self.db.table("nodes").update({"due_date": None}).eq("id", node_id).execute()
                     
                 # 推送每一則訊息中間稍作停頓以免被 Telegram API 阻擋
                 await asyncio.sleep(2)
