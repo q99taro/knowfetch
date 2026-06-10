@@ -64,39 +64,18 @@ class KnowledgePipeline:
                     new_articles.append(older_arts[0])
                     print(f"-> [{source}] 今日無新內容，補抓一篇未處理過的舊內容: {older_arts[0]['title']}")
 
-        print(f"-> 去重與篩選後，剩下 {len(new_articles)} 篇新文章準備過濾。")
+        print(f"-> 去重與篩選後，剩下 {len(new_articles)} 篇新文章準備處理。")
 
         if not new_articles:
             print("-> 所有文章皆已處理過，流水線結束。")
             return
 
         # ---------------------------------------------------------
-        # 步驟 3：LLM 批次判斷與篩選 (Batch Filtering)
+        # 步驟 3：[已取消 LLM 篩選] 現在直接處理所有新抓取的文章
         # ---------------------------------------------------------
-        print("[Step 3] 進行文章價值評估 (交由 Gemini 篩選)...")
-        
-        filtered_articles = []
-        if new_articles:
-            print(f"-> 將 {len(new_articles)} 篇文章交由 Gemini 進行篩選...")
-            llm_filtered = self.llm_extractor.batch_filter_articles(new_articles)
-            
-            # 錄入被 LLM 篩選掉的文章至 ignored_urls，避免下次流水線重複處理
-            filtered_urls_set = {art['url'] for art in llm_filtered}
-            rejected_urls = [art['url'] for art in new_articles if art['url'] not in filtered_urls_set]
-            if rejected_urls:
-                print(f"   -> 有 {len(rejected_urls)} 篇文章被 LLM 判定為不符合條件，將其加入略過清單。")
-                try:
-                    ignored_data = [{"url": url} for url in rejected_urls]
-                    self.db.table("ignored_urls").insert(ignored_data).execute()
-                except Exception as e:
-                    print(f"   -> 寫入 ignored_urls 失敗 (可能已存在): {e}")
+        filtered_articles = new_articles
 
-            filtered_articles.extend(llm_filtered)
-            
-            # 剛呼叫完 LLM，強制暫停等待速率冷卻
-            await asyncio.sleep(self.gemini_rate_limit_delay)
-
-        print(f"-> 篩選完畢，共 {len(filtered_articles)} 篇文章準備抓取與分析。")
+        print(f"-> 共 {len(filtered_articles)} 篇文章準備抓取與分析。")
 
         # ---------------------------------------------------------
         # 步驟 4 ~ 6：逐篇抓取、摘要與寄送 Email
@@ -119,9 +98,8 @@ class KnowledgePipeline:
             try:
                 markdown_summary = self.llm_extractor.summarize_article(content_text)
                 
-                # 就算失敗或是無知識點也視為處理過
-                if "無法生成摘要" in markdown_summary or "本篇文章無進階實作知識點" in markdown_summary:
-                    print("  -> 該文章未提取出有意義之重點或發生錯誤，將直接略過寄件。")
+                if "無法生成摘要" in markdown_summary:
+                    print("  -> 發生錯誤，將直接略過寄件。")
                     print(f"  -> [詳細原因]: {markdown_summary.strip()}")
                 else:
                     # Step 6: 將摘要寄送至 Email
