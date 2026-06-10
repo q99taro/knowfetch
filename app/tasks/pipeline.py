@@ -1,15 +1,16 @@
 import asyncio
+import traceback
 from typing import List, Dict, Any
 from app.services.scraper import ArticleScraper
-from app.services.chunker import AdaptiveChunker
 from app.services.llm_extractor import LLMExtractor
+from app.services.email_sender import EmailSender
 from app.core.database import get_db
 
 class KnowledgePipeline:
     def __init__(self):
         self.scraper = ArticleScraper()
-        self.chunker = AdaptiveChunker()
         self.llm_extractor = LLMExtractor()
+        self.email_sender = EmailSender()
         self.db = get_db()
         
         # 嚴格的速率限制：Gemini RPC=15 (每分鐘15次)，相當於每4秒只能發送1次請求
@@ -17,7 +18,7 @@ class KnowledgePipeline:
         self.gemini_rate_limit_delay = 5.0 
 
     async def run_daily_pipeline(self):
-        print("====== 🚀 啟動 KnowFetch 每日知識網羅流水線 ======")
+        print("====== 🚀 啟動 KnowFetch 每日文章重點摘要流水線 ======")
         
         # ---------------------------------------------------------
         # 步驟 1：抓取 24 小時內的所有文章清單
@@ -31,19 +32,15 @@ class KnowledgePipeline:
             return
 
         # ---------------------------------------------------------
-        # 步驟 2：資料庫去重 (Deduplication)
+        # 步驟 2：資料庫去重 (Deduplication) 依舊依賴 ignored_urls 保存已處理紀錄
         # ---------------------------------------------------------
         print("[Step 2] 檢查資料庫是否已存在這些文章...")
         urls = [art['url'] for art in raw_articles]
         
         try:
-            # 查詢 supabase 裡的 nodes 表，看 source_url 是否已經存在
-            response = self.db.table("nodes").select("source_url").in_("source_url", urls).execute()
-            existing_urls = {row['source_url'] for row in response.data}
-            
-            # 同時查詢 ignored_urls 表看是否已被使用者刪除的黑名單
+            # 我們不再對 nodes 表查詢，僅查詢 ignored_urls (已處理/已寄信/拒絕的文章)
             ignored_res = self.db.table("ignored_urls").select("url").in_("url", urls).execute()
-            existing_urls.update(row['url'] for row in ignored_res.data)
+            existing_urls = {row['url'] for row in ignored_res.data}
         except Exception as e:
             print(f"-> 資料庫查詢失敗 ({e})，為安全起見，假設全部未抓取過。")
             existing_urls = set()
@@ -90,13 +87,12 @@ class KnowledgePipeline:
             print(f"-> 將 {len(other_articles)} 篇文章交由 Gemini 進行篩選...")
             llm_filtered = self.llm_extractor.batch_filter_articles(other_articles)
             
-            # [修正] 錄入被 LLM 篩選掉的文章至 ignored_urls，避免下次流水線重複處理
+            # 錄入被 LLM 篩選掉的文章至 ignored_urls，避免下次流水線重複處理
             filtered_urls_set = {art['url'] for art in llm_filtered}
             rejected_urls = [art['url'] for art in other_articles if art['url'] not in filtered_urls_set]
             if rejected_urls:
                 print(f"   -> 有 {len(rejected_urls)} 篇文章被 LLM 判定為不符合條件，將其加入略過清單。")
                 try:
-                    # 批次寫入 ignored_urls
                     ignored_data = [{"url": url} for url in rejected_urls]
                     self.db.table("ignored_urls").insert(ignored_data).execute()
                 except Exception as e:
@@ -110,16 +106,13 @@ class KnowledgePipeline:
         print(f"-> 篩選完畢，共 {len(filtered_articles)} 篇文章準備抓取與分析。")
 
         # ---------------------------------------------------------
-        # 步驟 4 ~ 6：逐篇抓取、切塊、抽圖譜與寫入 DB
+        # 步驟 4 ~ 6：逐篇抓取、摘要與寄送 Email
         # ---------------------------------------------------------
-        # 為了使爬蟲運行時間能延伸至早上 8 點，降低 YouTube 爬取頻率避免被阻擋
         import random
-        # 目標是 2 小時 (7200秒) 內處理完所有 YouTube 影片
         yt_articles_count = sum(1 for a in filtered_articles if a['source'].startswith('youtube'))
         if yt_articles_count > 0:
             target_time_seconds = 7200
             delay_per_yt = target_time_seconds // yt_articles_count
-            # 限制延遲上下限 (例如最少 60 秒，最多 5 分鐘)
             yt_base_delay = max(60, min(delay_per_yt, 300))
         else:
             yt_base_delay = 60
@@ -137,94 +130,51 @@ class KnowledgePipeline:
                     pass
                 continue
                 
-            # Step 5: 自適應分塊 (Adaptive Chunking)
-            chunks = self.chunker.chunk_article(content_text)
-            print(f"-> 文章成功切割為 {len(chunks)} 個安全區塊。")
-            
-            # Step 6: 針對每個 Chunk 呼叫 LLM 抽取知識圖譜
-            total_nodes_extracted = 0
-            for c_idx, chunk in enumerate(chunks):
-                print(f"  -> 處理 Chunk {c_idx+1}/{len(chunks)} ... (等待 Gemini 冷卻 5 秒)")
+            # Step 5: 全文呼叫 LLM 進行摘要重點提取
+            print("  -> 呼叫 Gemini 進行重點摘要...")
+            try:
+                markdown_summary = self.llm_extractor.summarize_article(content_text)
                 
-                # [重要防禦] 為了不觸發 HTTP 429 Too Many Requests，這裡強制 sleep
-                await asyncio.sleep(self.gemini_rate_limit_delay)
-                
-                graph_data = self.llm_extractor.extract_knowledge_graph(chunk)
-                if not graph_data or not graph_data.nodes:
-                    print("     -> 該區塊未擷取到有效知識，跳過。")
-                    continue
-                
-                total_nodes_extracted += len(graph_data.nodes)
-                print(f"     -> 成功抽取出 {len(graph_data.nodes)} 個節點與 {len(graph_data.edges)} 條邊，準備寫入 Supabase...")
-                self.save_graph_to_db(graph_data, article['url'])
+                # 就算失敗或是無知識點也視為處理過
+                if "無法生成摘要" in markdown_summary or "本篇文章無進階實作知識點" in markdown_summary:
+                    print("  -> 該文章未提取出有意義之重點或發生錯誤，將直接略過寄件。")
+                else:
+                    # Step 6: 將摘要寄送至 Email
+                    print("  -> 正在將重點以 Email 寄出...")
+                    success = await self.email_sender.send_article_summary(
+                        title=article['title'],
+                        article_url=article['url'],
+                        markdown_summary=markdown_summary
+                    )
+                    if success:
+                        print("  -> 🎉 Email 寄送成功！")
+                    else:
+                        print("  -> ⚠️ Email 寄送失敗！")
+                        
+            except Exception as e:
+                print(f"  -> 處理時發生異常：{e}")
+                traceback.print_exc()
 
-            # [修正] 如果整篇文章都沒抽到任何節點，也應該標註為已處理，避免下次重複執行 LLM 篩選與抓取
-            if total_nodes_extracted == 0:
-                print(f"-> 文章 {article['title']} 未抽取出任何知識點，加入忽略清單。")
-                try:
-                    self.db.table("ignored_urls").insert({"url": article['url']}).execute()
-                except:
-                    pass
+            # 標記為已處理 (加入 ignored_urls 避免未來重複爬取與處理)
+            try:
+                self.db.table("ignored_urls").insert({"url": article['url']}).execute()
+            except:
+                pass
 
-            # 爬取下一篇文章前，判斷是否為 YouTube 影片，進行隨機延遲 (分散請求避免被 ban)
-            if i < len(filtered_articles) - 1 and article['source'].startswith('youtube'):
-                # 加上一點隨機抖動 +/- 20%
-                jitter = random.uniform(0.8, 1.2)
-                sleep_time = int(yt_base_delay * jitter)
-                print(f"-> 🍵 避免 YouTube 爬取過於頻繁，等待 {sleep_time} 秒後再處理下一篇...\n")
+            # 爬取下一篇文章前，稍微等待確保不會觸發 Rate Limit
+            if i < len(filtered_articles) - 1:
+                if article['source'].startswith('youtube'):
+                    jitter = random.uniform(0.8, 1.2)
+                    sleep_time = int(yt_base_delay * jitter)
+                    print(f"-> 🍵 避免 YouTube 爬取頻繁，等待 {sleep_time} 秒...\n")
+                else:
+                    sleep_time = self.gemini_rate_limit_delay
+                    print(f"-> 冷卻 {sleep_time} 秒...\n")
+                
                 await asyncio.sleep(sleep_time)
 
         print("====== 🎉 今日流水線執行完畢 ======")
 
-    def save_graph_to_db(self, graph, source_url: str):
-        """
-        將抽取的 Graph 寫入 Supabase Postgres 關聯式表中。
-        遇到相同的 (label, title) 會重複使用以防產生孤立節點。
-        """
-        id_mapping = {}
-        
-        # 1. 寫入 Nodes
-        for node in graph.nodes:
-            # 查詢是否已經存在同樣 title & label 的節點
-            res = self.db.table("nodes").select("id").eq("label", node.label.value).eq("title", node.title).execute()
-            if res.data:
-                db_id = res.data[0]['id']
-            else:
-                new_node = {
-                    "label": node.label.value,
-                    "title": node.title,
-                    "content": node.content,
-                    "source_url": source_url,
-                    # 初始化 FSRS 參數：難度=0代表剛開始，穩定度=0
-                    "difficulty": 0.0,
-                    "stability": 0.0,
-                    "retrievability": 0.0,
-                    "due_date": None  # 您可以後續排程再把時間補上，或是現在抓 UTC 時間
-                }
-                inserted = self.db.table("nodes").insert(new_node).execute()
-                db_id = inserted.data[0]['id']
-            
-            # 建立關聯 (本地 ID -> 資料庫真實 UUID) 對照表
-            id_mapping[node.local_id] = db_id
-            
-        # 2. 寫入 Edges
-        for edge in graph.edges:
-            src_id = id_mapping.get(edge.source_local_id)
-            tgt_id = id_mapping.get(edge.target_local_id)
-            
-            if src_id and tgt_id:
-                # 檢查 DB 是否已經有這條關係
-                res = self.db.table("edges").select("id")\
-                    .eq("source_id", src_id)\
-                    .eq("target_id", tgt_id)\
-                    .eq("relation_type", edge.relation_type.value).execute()
-                
-                if not res.data:
-                    self.db.table("edges").insert({
-                        "source_id": src_id,
-                        "target_id": tgt_id,
-                        "relation_type": edge.relation_type.value
-                    }).execute()
 if __name__ == "__main__":
     pipeline = KnowledgePipeline()
     asyncio.run(pipeline.run_daily_pipeline())
