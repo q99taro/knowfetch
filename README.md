@@ -24,7 +24,7 @@ pinned: false
    - 利用 Gemini 進行大文本的意圖辨識與過濾，精準剃除不相關的雜訊或純名詞解釋的無用文章。
    - 透過 LLM 直接對中高價值文章進行總結，產出含有「情境與痛點」、「核心觀念 / 最佳實踐」、「程式碼範例」的高品質 Markdown 筆記。
 3. **郵件推播系統 (Email Delivery)**
-   - 重點整理完成後，系統會自動轉譯排版並透過 SMTP (例如 Gmail) 發送至使用者的個人信箱，達到每日一篇信件的無痛學習體驗。
+   - 重點整理完成後，系統會自動轉譯排版並透過 **Resend API** (HTTP/HTTPS) 發送至使用者的個人信箱，達到每日一篇信件的無痛學習體驗。特別設計改用 HTTP API 發信，以閃避雲端平台對常見 SMTP Port 的封鎖。
 
 ---
 
@@ -35,7 +35,7 @@ graph TD
     A[Data Ingestion: RSS] --> B(Supabase: Ignore List Deduplication)
     B --> C{Async Batch & LLM Filter}
     C --> D{Gemini Markdown Summarization}
-    D --> E[Email Sender: SMTP]
+    D --> E[Email Sender: Resend API]
     E --> F((User Inbox))
 ```
 
@@ -43,7 +43,7 @@ graph TD
 - **Backend Core**: Python 3.10+, `FastAPI`, `asyncio`, `httpx`, `Pydantic`
 - **Data & AI**: Google GenAI SDK (`Gemini 3.1 Flash-Lite`), `BeautifulSoup4`
 - **Database**: Supabase (`PostgreSQL`, `SQLAlchemy` - 用於已讀名單去重)
-- **Integration & APIs**:  `smtplib` (Email 傳送)
+- **Integration & APIs**: `resend` (Email 傳送)
 - **Deployment**: `Docker`, Hugging Face Spaces (Serverless HTTP Trigger)
 
 ---
@@ -78,14 +78,12 @@ SUPABASE_KEY=your_supabase_anon_key
 # API Cron 安全金鑰
 CRON_SECRET=your_cron_secret
 
-# Email 推播設定（例如使用 Gmail）
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_EMAIL=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-RECIPIENT_EMAIL=recipient_email@gmail.com
+# Email 推播設定（透過 Resend 發送）
+RESEND_API_KEY=re_your_api_key
+SENDER_EMAIL=onboarding@resend.dev
+RECIPIENT_EMAIL=your_email@gmail.com
 ```
-*(註：若使用 Gmail，`SMTP_PASSWORD` 請使用 Google 帳號設定內生成的「16碼應用程式密碼」)*
+*(註：若在 Hugging Face Spaces 等雲端環境部署，因會封鎖 Port 25/587 等傳統 SMTP 埠，本系統已優化改採用 Resend HTTP API 發送郵件。)*
 
 **3. 啟動伺服器**
 ```bash

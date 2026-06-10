@@ -9,4 +9,4 @@ beautifulsoup4
 sqlalchemy
 psycopg2-binary
 python-dotenv
-youtube-transcript-api
+youtube-transcript-apiresend==2.1.0
